@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
- 
+
 #include <webots/accelerometer.h>
 #include <webots/camera.h>
 #include <webots/distance_sensor.h>
@@ -25,14 +25,23 @@
 #include <webots/motor.h>
 #include <webots/position_sensor.h>
 #include <webots/robot.h>
- 
+
 #define WHEEL_RADIUS 0.02
 #define AXLE_LENGTH 0.052
 #define RANGE (1024/8)
- 
+
 #define LOWER_BOUND_DISTANCE 80.0
 #define UPPER_BOUND_DISTANCE 700.0
- 
+
+#define SENSOR_MAX 4096.0
+#define SPEED (7.536*0.5)
+#define BORNE_1 100.0
+#define BORNE_2 300.0
+#define BORNE_3 500.0
+#define BORNE_4 700.0
+
+
+
 static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right_position_sensor) {
   double l = wb_position_sensor_get_value(left_position_sensor);
   double r = wb_position_sensor_get_value(right_position_sensor);
@@ -48,21 +57,21 @@ static void compute_sensors(WbDeviceTag ps5,WbDeviceTag ps6,WbDeviceTag ps1,WbDe
   printf("e");
 }
 */
- 
+
 //add a bias to one side to make navigation consistent
 static double estProcheGauche(double ps5,double ps6,double ps1,double ps2){
-  double averageValue=((ps5+ps6*2)/3);
+  double averageValue=((ps5+ps6*4)/5);
   averageValue=fmax(averageValue-LOWER_BOUND_DISTANCE,0.0);
   averageValue=fmin(averageValue,UPPER_BOUND_DISTANCE);
-  //double estProche=sqrt(averageValue/(averageValue+30));
+  //double estProche=sqrt(averageValue/(averageValue+30));e
   double estProche=averageValue/UPPER_BOUND_DISTANCE;
   estProche=sqrt(estProche);
   printf("%g hhh \n", estProche);
   return estProche;
 }
- 
+
 static double estProcheDroite(double ps5,double ps6,double ps1,double ps2){
-  double averageValue=((ps1*2+ps2)/3); //bqseline
+  double averageValue=((ps1*4+ps2)/5); //bqseline
   averageValue=fmax(averageValue-LOWER_BOUND_DISTANCE,0.0);
   averageValue=fmin(averageValue,UPPER_BOUND_DISTANCE);
   //double estProche=sqrt(averageValue/(averageValue+30));
@@ -71,49 +80,70 @@ static double estProcheDroite(double ps5,double ps6,double ps1,double ps2){
   printf("%g \n", estProche);
   return estProche;
 }
- 
-static double estProcheCentre(double procheDroite,double procheGauche){
-  double averageValue=((procheDroite+procheGauche)/2);
-  averageValue=fmax(averageValue-0.75,0.0);
-  averageValue=fmin(averageValue,0.99);
-  double estProche=averageValue/0.99;
-  return estProche;
-}
- 
+
 //pour capteur trapeze est borne max 4000
-static double trapeze(
-double value, double borneA, double borneB, double borneC, double borneD)
-{
-  return borneA;
-  if(value<=borneC){
-    if(borneB<=value){
-      return 1;
-    }
-    if(value<=borneA){
-      return 0;
-    }
-    value=(value-borneA)/(borneB-borneA);
+static double trapeze(double value, double a, double b, double c, double d) {
+  if (value>=b && value<=c){
+    return 1.0;
   }
-  else{
-    if(value>=borneD){
-      return 0;
-    }
-    value=(borneD-value)/(borneD-borneC);
+  if (value<=a || value>=d){
+    return 0.0;
   }
-  return value;
- 
+  if (value < ){
+    return(value-a)/(b-a);
+  }
+  return(d-value)/(d-c);
 }
- 
+
+static double moyenneGauche(double ps5,double ps6){
+  return(ps5+ps6*4)/5;
+}
+static double moyenneDroite(double ps1,double ps2){
+  return (ps1*4+ps2)/5;
+}
+
 double tournerDroite(double procheD){
   double speed=7.536*(1.0-procheD)*0.5;
   return speed;
 }
- 
+
 double tournerGauche(double procheG){
-  double speed=7.536*(1.0-procheG)*0.5;
+  double speed=7.536*(1.0-procheG*0.99)*0.5;
   return speed;
 }
- 
+
+static double estProche(double value) {
+  return trapeze(value, BORNE_3, BORNE_4, SENSOR_MAX, SENSOR_MAX);
+}
+static double estLoin(double value) {
+  return trapeze(value,0.0,0.0, BORNE_1, BORNE_2);
+}
+static double estBon(double value) {
+  return trapeze(value, BORNE_1, BORNE_2, BORNE_3, BORNE_4);
+}
+
+static double longerMurGauche(double ps5){
+  return estProche(ps5)-estLoin(ps5);
+}
+
+
+static double estProcheCentre(double procheDroite,double procheGauche){
+  return fmin(trapeze(procheDroite, BORNE_3, BORNE_4, SENSOR_MAX, SENSOR_MAX)
+  ,trapeze(procheGauche, BORNE_3, BORNE_4, SENSOR_MAX, SENSOR_MAX));
+}
+
+static void inferer(double procheG, double procheD,double procheC, double *gauche, double *droite) {
+  double Tout =1.0-fmax(procheG,procheD);
+  double Droite=procheG;
+  double Gauche=procheD;
+  double Pivot=procheC;
+  printf("%g \n", Pivot);
+  double somme=Tout+Droite+Gauche+Pivot;
+  *gauche =SPEED*(Tout+Droite+Pivot)/somme;
+  *droite =SPEED*(Tout+Gauche-Pivot)/somme;
+}
+
+
 int main(int argc, char *argv[]) {
   /* define variables */
   WbDeviceTag distance_sensor[8], left_motor, right_motor, left_position_sensor, right_position_sensor;
@@ -130,7 +160,7 @@ int main(int argc, char *argv[]) {
   int camera_time_step;
   /* initialize Webots */
   wb_robot_init();
- 
+
   if (strcmp(wb_robot_get_model(), "GCtronic e-puck2") == 0) {
     printf("e-puck2 robot\n");
     time_step = 64;
@@ -140,13 +170,13 @@ int main(int argc, char *argv[]) {
     time_step = 256;
     camera_time_step = 1024;
   }
- 
+
   /* get and enable the camera and accelerometer */
   WbDeviceTag camera = wb_robot_get_device("camera");
   wb_camera_enable(camera, camera_time_step);
   WbDeviceTag accelerometer = wb_robot_get_device("accelerometer");
   wb_accelerometer_enable(accelerometer, time_step);
- 
+
   /* get a handler to the motors and set target position to infinity (speed control). */
   left_motor = wb_robot_get_device("left wheel motor");
   right_motor = wb_robot_get_device("right wheel motor");
@@ -154,22 +184,22 @@ int main(int argc, char *argv[]) {
   wb_motor_set_position(right_motor, INFINITY);
   wb_motor_set_velocity(left_motor, 0.0);
   wb_motor_set_velocity(right_motor, 0.0);
- 
+
   /* get a handler to the position sensors and enable them. */
   left_position_sensor = wb_robot_get_device("left wheel sensor");
   right_position_sensor = wb_robot_get_device("right wheel sensor");
   wb_position_sensor_enable(left_position_sensor, time_step);
   wb_position_sensor_enable(right_position_sensor, time_step);
- 
+
   for (i = 0; i < 8; i++) {
     char device_name[4];
- 
+
     /* get distance sensors */
     sprintf(device_name, "ps%d", i);
     distance_sensor[i] = wb_robot_get_device(device_name);
     wb_distance_sensor_enable(distance_sensor[i], time_step);
   }
- 
+
   /* main loop */
   while (wb_robot_step(time_step) != -1) {
     /* get sensors values */
@@ -177,45 +207,28 @@ int main(int argc, char *argv[]) {
       sensors_value[i] = wb_distance_sensor_get_value(distance_sensor[i]);
     const double *a = wb_accelerometer_get_values(accelerometer);
     printf("accelerometer values = %0.2f %0.2f %0.2f\n", a[0], a[1], a[2]);
- 
+
     /* compute odometry and speed values*/
     compute_odometry(left_position_sensor, right_position_sensor);
-    procheG=estProcheGauche(sensors_value[5],sensors_value[6],sensors_value[1],sensors_value[2]);
-    procheD=estProcheDroite(sensors_value[5],sensors_value[6],sensors_value[1],sensors_value[2]);
-    procheC=estProcheCentre(procheD,procheG);
+    procheG=estProche(moyenneGauche(sensors_value[5],sensors_value[6]));
+    procheD=estProche(moyenneDroite(sensors_value[1],sensors_value[2]));
+    procheC=estProcheCentre(sensors_value[0],sensors_value[7]);
     /*for (i = 0; i < 2; i++) {
       speed[i] = 0.0;
       if(i==0)proximity=procheD;
       else proximity=procheG;
       for(int j=0;j<8;j++)
         speed[i] += braitenberg_coefficients[j][i] * (1.0 - proximity);
- 
+        
     }*/
-    speed[0]=7.536*0.5;
-    speed[1]=7.536*0.5;
- 
-    /* set speed values */
- 
-    if(procheG && (!procheC)){
-      speed[0]=tournerGauche(procheG);
-    }
-    if(procheD){
-      speed[1]=tournerDroite(procheD);
-    }
-    /* */
-    if(procheC>0.8){
-      //speed[1]=-speed[1];
-      //speed[0]=-speed[0];
-      tournerDroite(procheC);
-    }
-    /*s */
- 
+    inferer(procheG, procheD, procheC, &speed[1], &speed[0]);
+    
     wb_motor_set_velocity(left_motor, speed[1]);
     wb_motor_set_velocity(right_motor, speed[0]);
- 
+
   }
- 
+
   wb_robot_cleanup();
- 
+
   return 0;
 }
