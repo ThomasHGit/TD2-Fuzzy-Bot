@@ -35,10 +35,8 @@
 
 #define SENSOR_MAX 4096.0
 #define SPEED (7.536*0.5)
-#define BORNE_1 100.0
-#define BORNE_2 300.0
-#define BORNE_3 500.0
-#define BORNE_4 700.0
+#define BORNE_3 100.0
+#define BORNE_4 1000.0
 
 
 
@@ -115,16 +113,7 @@ double tournerGauche(double procheG){
 static double estProche(double value) {
   return trapeze(value, BORNE_3, BORNE_4, SENSOR_MAX, SENSOR_MAX);
 }
-static double estLoin(double value) {
-  return trapeze(value,0.0,0.0, BORNE_1, BORNE_2);
-}
-static double estBon(double value) {
-  return trapeze(value, BORNE_1, BORNE_2, BORNE_3, BORNE_4);
-}
 
-static double longerMurGauche(double ps5){
-  return estProche(ps5)-estLoin(ps5);
-}
 
 
 static double estProcheCentre(double procheDroite,double procheGauche){
@@ -221,7 +210,7 @@ int main(int argc, char *argv[]) {
         speed[i] += braitenberg_coefficients[j][i] * (1.0 - proximity);
         
     }*/
-    inferer(procheG, procheD, procheC, &speed[1], &speed[0]);
+    inferer(pow(procheG,4), pow(procheD,4), procheC, &speed[1], &speed[0]);
     
     wb_motor_set_velocity(left_motor, speed[1]);
     wb_motor_set_velocity(right_motor, speed[0]);
