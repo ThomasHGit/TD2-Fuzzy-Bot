@@ -89,7 +89,7 @@ static double trapeze(double value, double a, double b, double c, double d) {
   if (value<=a || value>=d){
     return 0.0;
   }
-  if (value < ){
+  if (value < b){
     return(value-a)/(b-a);
   }
   return(d-value)/(d-c);
